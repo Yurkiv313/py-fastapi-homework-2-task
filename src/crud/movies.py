@@ -100,32 +100,68 @@ async def create_movie(db: AsyncSession, data: MovieCreateSchema) -> MovieModel:
 
 async def patch_movie(db: AsyncSession, movie_id: int, data: MoviePatchSchema) -> None:
     movie = await get_movie_by_id(db, movie_id)
-
     if not movie:
-        raise HTTPException(
-            status_code=404, detail="Movie with the given ID was not found."
-        )
+        raise HTTPException(status_code=404, detail="Movie with the given ID was not found.")
 
     try:
-        if data.name is not None:
-            movie.name = data.name
-        if data.date is not None:
-            movie.date = data.date
-        if data.score is not None:
-            movie.score = data.score
-        if data.overview is not None:
-            movie.overview = data.overview
-        if data.status is not None:
-            movie.status = data.status
-        if data.budget is not None:
-            movie.budget = data.budget
-        if data.revenue is not None:
-            movie.revenue = data.revenue
+        updated = False
 
-        await db.commit()
+        for field in ("name", "date", "score", "overview", "status", "budget", "revenue"):
+            value = getattr(data, field)
+            if value is not None:
+                setattr(movie, field, value)
+                updated = True
 
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid input data.")
+        if hasattr(data, "country") and data.country:
+            country = await db.scalar(
+                select(CountryModel).where(CountryModel.code == data.country)
+            )
+            if not country:
+                country = CountryModel(code=data.country)
+                db.add(country)
+            movie.country = country
+            updated = True
+
+        if hasattr(data, "genres") and data.genres:
+            genres = []
+            for name in data.genres:
+                genre = await db.scalar(select(GenreModel).where(GenreModel.name == name))
+                if not genre:
+                    genre = GenreModel(name=name)
+                    db.add(genre)
+                genres.append(genre)
+            movie.genres = genres
+            updated = True
+
+        if hasattr(data, "actors") and data.actors:
+            actors = []
+            for name in data.actors:
+                actor = await db.scalar(select(ActorModel).where(ActorModel.name == name))
+                if not actor:
+                    actor = ActorModel(name=name)
+                    db.add(actor)
+                actors.append(actor)
+            movie.actors = actors
+            updated = True
+
+        if hasattr(data, "languages") and data.languages:
+            langs = []
+            for name in data.languages:
+                lang = await db.scalar(select(LanguageModel).where(LanguageModel.name == name))
+                if not lang:
+                    lang = LanguageModel(name=name)
+                    db.add(lang)
+                langs.append(lang)
+            movie.languages = langs
+            updated = True
+
+        if updated:
+            await db.commit()
+        else:
+            raise HTTPException(status_code=400, detail="No valid fields provided for update.")
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 async def delete_movie(db: AsyncSession, movie_id: int):
